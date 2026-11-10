@@ -101,6 +101,7 @@ interface GameState {
   tournamentMatches: TournamentMatch[];
   tournamentCurrentMatch: number;
   tournamentScores: Record<AgentId, { wins: number; losses: number; ties: number; points: number }>;
+  tournamentStopped: boolean;
 }
 
 // ============================================
@@ -189,11 +190,11 @@ const THEMES: Record<ThemeId, Theme> = {
 };
 
 const GAMES: Record<GameType, { name: string; description: string }> = {
-  rps: { name: "Rock-Paper-Scissors", description: "Best of 3 rounds" },
+  rps: { name: "Rock-Paper-Scissors", description: "Best of 3 (tied rounds replay)" },
   ttt: { name: "Tic-Tac-Toe", description: "Classic 3x3 grid" },
   mancala: { name: "Mancala", description: "Capture the most stones" },
-  war: { name: "War", description: "Best of 5 card battles" },
-  blackjack: { name: "Blackjack", description: "Get closest to 21" },
+  war: { name: "War", description: "Best of 5 card battles (ties replay)" },
+  blackjack: { name: "Blackjack", description: "Best of 3 hands, closest to 21 (pushes replay)" },
 };
 
 // ============================================
@@ -737,16 +738,20 @@ class RPSGame implements BaseGame {
   constructor() {
     this.round = 1;
     this.scores = [0, 0];
-    this.maxRounds = 3; // Best of 3 - first to 2 wins
+    // Best of 3: first to 2 round wins. Tied rounds are replayed instead of counting
+    // toward the 3, so matches rarely end in a tie. The cap only stops an endless
+    // run of ties (a match tie now happens well under 1% of the time).
+    this.maxRounds = 9;
     this.history = [];
     this.currentMoves = [null, null];
     this.lastRoundMoves = [null, null];
     this.roundJustEnded = false;
   }
 
-  makeMove(player: number, move: string): boolean {
+  makeMove(player: number, rawMove: string): boolean {
     const validMoves = ["Rock", "Paper", "Scissors"];
-    if (!validMoves.includes(move)) return false;
+    const move = validMoves.find((m) => m.toLowerCase() === String(rawMove).trim().toLowerCase());
+    if (!move) return false;
 
     // Clear last round moves when starting a new round
     if (player === 0 && this.roundJustEnded) {
@@ -800,8 +805,8 @@ class RPSGame implements BaseGame {
   }
 
   isGameOver(): boolean {
-    // Best of 3: first to 2 wins, or max 3 rounds
-    return this.round > this.maxRounds || this.scores[0] >= 2 || this.scores[1] >= 2;
+    // First to 2 round wins; tied rounds replay (capped by maxRounds)
+    return this.scores[0] >= 2 || this.scores[1] >= 2 || this.round > this.maxRounds;
   }
 
   getWinner(): number | null {
@@ -831,7 +836,7 @@ class RPSGame implements BaseGame {
       historyContext = "\nThis is your first match against this opponent.";
     }
 
-    return `Round ${this.round} of best-of-3 series.
+    return `Round ${this.round} of a best-of-3 series (first to 2 wins; tied rounds are replayed).
 Current score: You ${myScore} - Opponent ${oppScore}${historyContext}
 
 Make your move. Respond in exactly this format:
@@ -1204,7 +1209,9 @@ class WarGame implements BaseGame {
     this.lastRoundCards = [null, null];
     this.scores = [0, 0];
     this.round = 1;
-    this.maxRounds = 5; // Best of 5
+    // Best of 5: first to 3 round wins. Tied rounds (same rank) are replayed;
+    // the cap only stops an extreme run of ties (each player has 26 cards).
+    this.maxRounds = 13;
     this.history = [];
   }
 
@@ -1255,7 +1262,7 @@ class WarGame implements BaseGame {
   }
 
   isGameOver(): boolean {
-    return this.round > this.maxRounds || this.scores[0] >= 3 || this.scores[1] >= 3;
+    return this.scores[0] >= 3 || this.scores[1] >= 3 || this.round > this.maxRounds;
   }
 
   getWinner(): number | null {
@@ -1283,7 +1290,7 @@ class WarGame implements BaseGame {
       }).join("\n");
     }
 
-    return `WAR - Round ${this.round} of best-of-5
+    return `WAR - Round ${this.round} of a best-of-5 (first to 3 wins; tied rounds are replayed)
 Current score: You ${myScore} - Opponent ${oppScore}${historyContext}
 
 It's time to draw your card! In War, you have no control over what card you draw - it's pure luck!
@@ -1314,7 +1321,9 @@ class BlackjackGame implements BaseGame {
     this.hands = [[], []];
     this.scores = [0, 0];
     this.round = 1;
-    this.maxRounds = 3;
+    // Best of 3: first to 2 round wins. Pushes (equal totals or both bust) are replayed;
+    // the cap only stops an extreme run of pushes.
+    this.maxRounds = 9;
     this.currentBets = [0, 0];
     this.playerStood = [false, false];
     this.roundOver = false;
@@ -1435,7 +1444,7 @@ class BlackjackGame implements BaseGame {
   }
 
   isGameOver(): boolean {
-    return this.round > this.maxRounds || this.scores[0] >= 2 || this.scores[1] >= 2;
+    return this.scores[0] >= 2 || this.scores[1] >= 2 || this.round > this.maxRounds;
   }
 
   getWinner(): number | null {
@@ -1473,7 +1482,7 @@ class BlackjackGame implements BaseGame {
       }).join("\n");
     }
 
-    return `BLACKJACK - Round ${this.round} of best-of-3
+    return `BLACKJACK - Round ${this.round} of a best-of-3 (first to 2 wins; pushes are replayed)
 Current match score: You ${myScore} - Opponent ${oppScore}${historyContext}
 
 YOUR HAND: ${this.getHandString(myHand)} (Total: ${myTotal})
@@ -1705,6 +1714,7 @@ const initialState: GameState = {
     rookie: { wins: 0, losses: 0, ties: 0, points: 0 },
     diva: { wins: 0, losses: 0, ties: 0, points: 0 },
   },
+  tournamentStopped: false,
 };
 
 // ============================================
@@ -1743,7 +1753,8 @@ type Action =
   | { type: "NEXT_TOURNAMENT_MATCH" }
   | { type: "UPDATE_TOURNAMENT_MATCH"; matchIndex: number; winner: AgentId | null }
   | { type: "UPDATE_TOURNAMENT_SCORES"; agent: AgentId; result: "win" | "loss" | "tie" }
-  | { type: "END_TOURNAMENT" };
+  | { type: "END_TOURNAMENT" }
+  | { type: "STOP_TOURNAMENT" };
 
 function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -1828,6 +1839,7 @@ function gameReducer(state: GameState, action: Action): GameState {
         tournamentPhase: "running",
         tournamentMatches: action.matches,
         tournamentCurrentMatch: 0,
+        tournamentStopped: false,
         tournamentScores: {
           analyst: { wins: 0, losses: 0, ties: 0, points: 0 },
           chaos: { wins: 0, losses: 0, ties: 0, points: 0 },
@@ -1868,13 +1880,37 @@ function gameReducer(state: GameState, action: Action): GameState {
     case "END_TOURNAMENT":
       return {
         ...state,
-        tournamentPhase: "finished",
+        tournamentPhase: "idle",
+        tournamentStopped: false,
         tournamentMode: false,
         agent1: null,
         agent2: null,
         currentGame: null,
         gamePhase: "setup",
       };
+    case "STOP_TOURNAMENT": {
+      const completedMatches = state.tournamentMatches.filter((m) => m.completed).length;
+      return {
+        ...state,
+        // Show partial standings if at least one match finished; otherwise go straight back to setup
+        tournamentPhase: completedMatches > 0 ? "finished" : "idle",
+        tournamentStopped: completedMatches > 0,
+        tournamentMode: false,
+        agent1: null,
+        agent2: null,
+        currentGame: null,
+        gamePhase: "setup",
+        currentPlayer: 0,
+        isThinking: false,
+        thinkingAgent: null,
+        agent1Commentary: "",
+        agent2Commentary: "",
+        postGameCommentary1: "",
+        postGameCommentary2: "",
+        isTyping1: false,
+        isTyping2: false,
+      };
+    }
     default:
       return state;
   }
@@ -1980,6 +2016,40 @@ const useTerminalSounds = (enabled: boolean) => {
 };
 
 // ============================================
+// MOVE HELPERS (shared by regular, exhibition and tournament loops)
+// ============================================
+
+type AnyGame = RPSGame | TTTGame | MancalaGame | WarGame | BlackjackGame;
+
+// Validate and apply a move in any game. Returns false if the move is illegal.
+const applyMove = (game: AnyGame, player: number, move: string): boolean => {
+  if (game instanceof TTTGame) {
+    const pos = parseInt(move);
+    return !isNaN(pos) && game.makeMove(player, pos);
+  }
+  return game.makeMove(player, move);
+};
+
+// A guaranteed-legal move, used if an agent fails to produce a legal one 3 times in a row
+// (so a confused AI reply can't crash the match).
+const getFallbackMove = (game: AnyGame, player: number): string => {
+  const pick = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
+  if (game instanceof RPSGame) return pick(["Rock", "Paper", "Scissors"]);
+  if (game instanceof TTTGame) return String(pick(game.getAvailableMoves()));
+  if (game instanceof MancalaGame) {
+    return String(pick(game.getValidMoves(player).map((pit) => (player === 0 ? pit + 1 : pit - 6))));
+  }
+  if (game instanceof WarGame) return "Draw";
+  return "Stand";
+};
+
+// Who moves next. Mancala rule: if your last stone lands in your own store, you go again.
+const nextPlayerAfter = (game: AnyGame, player: number): number =>
+  game instanceof MancalaGame && game.lastMove?.player === player && game.lastMove.extraTurn
+    ? player
+    : 1 - player;
+
+// ============================================
 // TYPING ANIMATION COMPONENT
 // ============================================
 
@@ -1990,8 +2060,13 @@ const TypewriterText: React.FC<{
   playSound: (type: "type") => void;
   theme: Theme;
 }> = ({ text, speed = 25, onComplete, playSound, theme }) => {
-  const [displayText, setDisplayText] = useState("");
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // Progress is tied to the text it belongs to. When a new line arrives, the count
+  // starts over at 0 instead of continuing from where the previous line stopped
+  // (which used to splice the tail of the new line onto the old one).
+  const [progress, setProgress] = useState<{ text: string; count: number }>({ text, count: 0 });
+  const instant = speed <= 0;
+  const count = instant ? text.length : progress.text === text ? progress.count : 0;
+  const displayText = text.slice(0, count);
   const onCompleteRef = useRef(onComplete);
   const playSoundRef = useRef(playSound);
   
@@ -2002,19 +2077,17 @@ const TypewriterText: React.FC<{
   }, [onComplete, playSound]);
 
   useEffect(() => {
-    if (currentIndex < text.length) {
+    if (count < text.length) {
       const timer = setTimeout(() => {
-        setDisplayText((prev) => prev + text[currentIndex]);
-        setCurrentIndex((prev) => prev + 1);
-        if (currentIndex % 2 === 0) {
+        setProgress({ text, count: count + 1 });
+        if (count % 2 === 0) {
           playSoundRef.current("type");
         }
       }, speed);
       return () => clearTimeout(timer);
-    } else {
-      onCompleteRef.current?.();
     }
-  }, [currentIndex, text, speed]); // Removed onComplete and playSound from deps
+    onCompleteRef.current?.();
+  }, [count, text, speed]); // onComplete and playSound are read through refs
 
   return (
     <span style={{ color: theme.text }}>
@@ -2129,10 +2202,33 @@ export default function AgentGameArena() {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const { playSound } = useTerminalSounds(state.soundEnabled);
   const gameLoopRef = useRef<boolean>(false);
+  const tournamentCancelRef = useRef<boolean>(false);
+  // Bumped on every match start/stop; a running loop quits as soon as its number is out of date
+  const matchGenRef = useRef<number>(0);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const humanMoveRef = useRef<string | null>(null);
 
   // Agent Memory System - persistent localStorage storage
+  // Whether this server has a Claude API key configured (checked once on load)
+  const [claudeAvailable, setClaudeAvailable] = useState<boolean>(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/game")
+      .then((res) => res.json())
+      .then((data: { claudeAvailable?: boolean }) => {
+        if (cancelled) return;
+        const available = Boolean(data.claudeAvailable);
+        setClaudeAvailable(available);
+        if (!available) dispatch({ type: "SET_API_PROVIDER", provider: "offline" });
+      })
+      .catch(() => {
+        if (!cancelled) setClaudeAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [arenaMemory, setArenaMemory] = useState<ArenaMemory | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
 
@@ -2230,13 +2326,23 @@ export default function AgentGameArena() {
     dispatch({ type: "ADD_LOG", message: "Game started!" });
 
     gameLoopRef.current = true;
-    await runGameLoop(game);
+    const gen = ++matchGenRef.current;
+    await runGameLoop(game, gen);
   };
 
-  const runGameLoop = async (game: RPSGame | TTTGame | MancalaGame | WarGame | BlackjackGame) => {
-    let currentPlayerLocal = 0; // Use local variable to avoid dependency issues
+  // Stop a regular (non-tournament) match: keeps the selected game and agents so you can hit EXECUTE again
+  const handleStopMatch = () => {
+    matchGenRef.current++;
+    gameLoopRef.current = false;
+    humanMoveRef.current = null;
+    dispatch({ type: "RESET_GAME" });
+  };
 
-    while (gameLoopRef.current && !game.isGameOver()) {
+  const runGameLoop = async (game: RPSGame | TTTGame | MancalaGame | WarGame | BlackjackGame, gen: number) => {
+    let currentPlayerLocal = 0; // Use local variable to avoid dependency issues
+    const stopped = () => gen !== matchGenRef.current;
+
+    while (gameLoopRef.current && !stopped() && !game.isGameOver()) {
       const player = currentPlayerLocal;
       const isHumanTurn = state.gameMode === "human-vs-bot" && player === 0;
 
@@ -2254,20 +2360,8 @@ export default function AgentGameArena() {
 
         try {
           const humanMove = await waitForHumanMove();
-          let valid = false;
-
-          if (game instanceof RPSGame) {
-            valid = game.makeMove(player, humanMove);
-          } else if (game instanceof TTTGame) {
-            const pos = parseInt(humanMove);
-            valid = !isNaN(pos) && game.makeMove(player, pos);
-          } else if (game instanceof MancalaGame) {
-            valid = game.makeMove(player, humanMove);
-          } else if (game instanceof WarGame) {
-            valid = game.makeMove(player, humanMove);
-          } else if (game instanceof BlackjackGame) {
-            valid = game.makeMove(player, humanMove);
-          }
+          if (stopped()) return;
+          const valid = applyMove(game, player, humanMove);
 
           if (!valid) {
             addLog("Invalid move! Try again.");
@@ -2281,7 +2375,7 @@ export default function AgentGameArena() {
 
           // For RPS and War, wait for bot to play before revealing
           if (!(game instanceof RPSGame) && !(game instanceof WarGame)) {
-            currentPlayerLocal = 1 - player;
+            currentPlayerLocal = nextPlayerAfter(game, player);
             dispatch({ type: "SET_CURRENT_PLAYER", player: currentPlayerLocal });
           } else {
             // In RPS/War, both players move, then reveal
@@ -2348,23 +2442,12 @@ export default function AgentGameArena() {
             state.apiProvider
           );
 
+          if (stopped()) return;
           move = response.move;
           commentary = response.commentary;
 
           if (move) {
-            let valid = false;
-            if (game instanceof RPSGame) {
-              valid = game.makeMove(player, move);
-            } else if (game instanceof TTTGame) {
-              const pos = parseInt(move);
-              valid = !isNaN(pos) && game.makeMove(player, pos);
-            } else if (game instanceof MancalaGame) {
-              valid = game.makeMove(player, move);
-            } else if (game instanceof WarGame) {
-              valid = game.makeMove(player, move);
-            } else if (game instanceof BlackjackGame) {
-              valid = game.makeMove(player, move);
-            }
+            const valid = applyMove(game, player, move);
 
             if (!valid) {
               move = null;
@@ -2377,7 +2460,12 @@ export default function AgentGameArena() {
         }
 
         if (!move) {
-          throw new Error(`${agent.name} failed to make a valid move after 3 attempts`);
+          const fallback = getFallbackMove(game, player);
+          if (!applyMove(game, player, fallback)) {
+            throw new Error(`${agent.name} failed to make a valid move after 3 attempts`);
+          }
+          move = fallback;
+          addLog(`${agent.name} couldn't settle on a legal move; auto-played ${fallback}.`);
         }
 
         dispatch({ type: "SET_COMMENTARY", player, commentary, isTyping: true });
@@ -2387,14 +2475,15 @@ export default function AgentGameArena() {
         playSound("move");
 
         await sleep(state.moveDelay);
+        if (stopped()) return;
 
         // For RPS and War, add extra delay after player 2's move so users can see both hands/cards
         if ((game instanceof RPSGame || game instanceof WarGame) && player === 1) {
           await sleep(state.moveDelay * 2);
         }
 
-        // Update local player tracker and dispatch to UI
-        currentPlayerLocal = 1 - player;
+        // Update local player tracker and dispatch to UI (Mancala extra turns keep the same player)
+        currentPlayerLocal = nextPlayerAfter(game, player);
         dispatch({ type: "SET_CURRENT_PLAYER", player: currentPlayerLocal });
       } catch (error) {
         dispatch({ type: "SET_ERROR", error: String(error) });
@@ -2404,7 +2493,7 @@ export default function AgentGameArena() {
       }
     }
 
-    if (game.isGameOver()) {
+    if (!stopped() && game.isGameOver()) {
       const winner = game.getWinner();
       dispatch({ type: "SET_GAME_PHASE", phase: "finished" });
 
@@ -2597,6 +2686,13 @@ POST_GAME: [Your reaction]`;
       dispatch({ type: "SET_WAITING_FOR_HUMAN", waiting: true });
 
       const checkMove = setInterval(() => {
+        // Match was stopped while waiting: stop polling so the loop can exit
+        if (!gameLoopRef.current) {
+          clearInterval(checkMove);
+          dispatch({ type: "SET_WAITING_FOR_HUMAN", waiting: false });
+          resolve("");
+          return;
+        }
         // Check the ref that will be updated by the human move handler
         if (humanMoveRef.current) {
           clearInterval(checkMove);
@@ -2626,6 +2722,7 @@ POST_GAME: [Your reaction]`;
     }
 
     const matches = generateRoundRobinMatches();
+    tournamentCancelRef.current = false;
     dispatch({ type: "START_TOURNAMENT", matches });
     dispatch({ type: "ADD_LOG", message: `Starting Round-Robin Tournament: ${GAMES[state.selectedGame].name}` });
     dispatch({ type: "ADD_LOG", message: `Total matches: ${matches.length}` });
@@ -2634,8 +2731,15 @@ POST_GAME: [Your reaction]`;
     await runTournament(matches);
   };
 
+  // Stop a running tournament: ends the current match at the next turn and skips the rest
+  const handleStopTournament = () => {
+    tournamentCancelRef.current = true;
+    gameLoopRef.current = false;
+  };
+
   const runTournament = async (matches: TournamentMatch[]) => {
     for (let i = 0; i < matches.length; i++) {
+      if (tournamentCancelRef.current) break;
       const match = matches[i];
 
       dispatch({ type: "ADD_LOG", message: `\n--- Match ${i + 1}/${matches.length} ---` });
@@ -2650,6 +2754,9 @@ POST_GAME: [Your reaction]`;
 
       // Run the match
       const winner = await runTournamentMatch(match.agent1, match.agent2);
+
+      // A match interrupted by STOP is not recorded (it would otherwise count as a tie)
+      if (tournamentCancelRef.current) break;
 
       // Update tournament state
       dispatch({ type: "UPDATE_TOURNAMENT_MATCH", matchIndex: i, winner });
@@ -2690,6 +2797,13 @@ POST_GAME: [Your reaction]`;
 
       // Delay between matches
       await sleep(1000);
+    }
+
+    if (tournamentCancelRef.current) {
+      tournamentCancelRef.current = false;
+      dispatch({ type: "ADD_LOG", message: "\n=== TOURNAMENT STOPPED ===" });
+      dispatch({ type: "STOP_TOURNAMENT" });
+      return;
     }
 
     // Tournament complete
@@ -2795,19 +2909,7 @@ POST_GAME: [Your reaction]`;
           commentary = response.commentary;
 
           if (move) {
-            let valid = false;
-            if (game instanceof RPSGame) {
-              valid = game.makeMove(player, move);
-            } else if (game instanceof TTTGame) {
-              const pos = parseInt(move);
-              valid = !isNaN(pos) && game.makeMove(player, pos);
-            } else if (game instanceof MancalaGame) {
-              valid = game.makeMove(player, move);
-            } else if (game instanceof WarGame) {
-              valid = game.makeMove(player, move);
-            } else if (game instanceof BlackjackGame) {
-              valid = game.makeMove(player, move);
-            }
+            const valid = applyMove(game, player, move);
 
             if (!valid) {
               move = null;
@@ -2819,7 +2921,11 @@ POST_GAME: [Your reaction]`;
         }
 
         if (!move) {
-          throw new Error(`${agent.name} failed to make a valid move`);
+          const fallback = getFallbackMove(game, player);
+          if (!applyMove(game, player, fallback)) {
+            throw new Error(`${agent.name} failed to make a valid move`);
+          }
+          move = fallback;
         }
 
         dispatch({ type: "SET_COMMENTARY", player, commentary, isTyping: false });
@@ -2833,7 +2939,7 @@ POST_GAME: [Your reaction]`;
           await sleep(state.moveDelay);
         }
 
-        currentPlayerLocal = 1 - player;
+        currentPlayerLocal = nextPlayerAfter(game, player);
         dispatch({ type: "SET_CURRENT_PLAYER", player: currentPlayerLocal });
       } catch (error) {
         dispatch({ type: "SET_THINKING", isThinking: false, agent: null });
@@ -2978,12 +3084,17 @@ POST_GAME: [Your reaction]`;
               }}
               value={state.apiProvider}
               onChange={(e) => dispatch({ type: "SET_API_PROVIDER", provider: e.target.value as ApiProvider })}
+              title={claudeAvailable ? "Choose how the agents think" : "Claude mode isn't set up on this server, so agents use offline personalities"}
             >
               <option value="offline" style={{ backgroundColor: currentTheme.background }}>
                 [ OFFLINE ]
               </option>
-              <option value="claude" style={{ backgroundColor: currentTheme.background }}>
-                [ CLAUDE API ]
+              <option
+                value="claude"
+                disabled={!claudeAvailable}
+                style={{ backgroundColor: currentTheme.background, color: claudeAvailable ? undefined : "#666" }}
+              >
+                {claudeAvailable ? "[ CLAUDE API ]" : "[ CLAUDE API: N/A ]"}
               </option>
             </select>
           </div>
@@ -3168,6 +3279,16 @@ POST_GAME: [Your reaction]`;
                   [ EXECUTE ]
                 </button>
 
+                {(state.gamePhase === "playing" || state.gamePhase === "placement") && state.tournamentPhase !== "running" && (
+                  <button
+                    className="px-4 py-2 border font-bold hover:opacity-80"
+                    style={{ borderColor: "#ff3333", color: "#ff3333" }}
+                    onClick={handleStopMatch}
+                  >
+                    [ ■ STOP ]
+                  </button>
+                )}
+
                 <select
                   className="px-2 py-1 border bg-transparent"
                   style={{ borderColor: "#444", color: currentTheme.text }}
@@ -3192,8 +3313,11 @@ POST_GAME: [Your reaction]`;
                     className="px-2 py-1 border hover:bg-gray-800"
                     style={{ borderColor: "#444", color: currentTheme.text }}
                     onClick={() => {
-                      gameLoopRef.current = false;
-                      dispatch({ type: "RESET_GAME" });
+                      if (state.tournamentPhase === "running") {
+                        handleStopTournament();
+                        return;
+                      }
+                      handleStopMatch();
                     }}
                   >
                     [ RESET ]
@@ -3229,9 +3353,16 @@ POST_GAME: [Your reaction]`;
                   <span className="font-bold" style={{ color: "#ff69b4" }}>
                     ROUND-ROBIN TOURNAMENT
                   </span>
-                  <span style={{ color: "#ff69b4" }}>
+                  <span className="flex-1 overflow-hidden whitespace-nowrap" style={{ color: "#ff69b4" }}>
                     {"─────────────────────────────────────"}
                   </span>
+                  <button
+                    className="px-3 py-1 border font-bold hover:opacity-80 shrink-0"
+                    style={{ borderColor: "#ff3333", color: "#ff3333" }}
+                    onClick={handleStopTournament}
+                  >
+                    [ STOP TOURNAMENT ]
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3313,7 +3444,7 @@ POST_GAME: [Your reaction]`;
                 <div className="flex items-center gap-2 mb-3">
                   <span style={{ color: "#ffd700" }}>🏆</span>
                   <span className="font-bold" style={{ color: "#ffd700" }}>
-                    TOURNAMENT COMPLETE
+                    {state.tournamentStopped ? "TOURNAMENT STOPPED" : "TOURNAMENT COMPLETE"}
                   </span>
                   <span style={{ color: "#ffd700" }}>
                     {"─────────────────────────────────────"}
@@ -3327,7 +3458,7 @@ POST_GAME: [Your reaction]`;
                     return (
                       <div>
                         <div className="text-2xl mb-2" style={{ color: "#ffd700", textShadow: "0 0 15px #ffd700" }}>
-                          CHAMPION
+                          {state.tournamentStopped ? "LEADER AT STOP" : "CHAMPION"}
                         </div>
                         <pre style={{ color: AGENTS[champion.agentId].color, fontSize: "18px", lineHeight: "1.1" }}>
                           {AGENT_ASCII[champion.agentId].join("\n")}
@@ -3344,7 +3475,9 @@ POST_GAME: [Your reaction]`;
                 </div>
 
                 <div className="text-base mb-2" style={{ color: currentTheme.secondary }}>
-                  FINAL STANDINGS:
+                  {state.tournamentStopped
+                    ? `STANDINGS AFTER ${state.tournamentMatches.filter((m) => m.completed).length}/${state.tournamentMatches.length} MATCHES:`
+                    : "FINAL STANDINGS:"}
                 </div>
                 <table className="w-full" style={{ fontSize: "18px" }}>
                   <thead>
