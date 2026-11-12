@@ -2,6 +2,8 @@
 
 Five AI personalities face off in classic games, trash-talking and holding grudges as they go.
 
+**Live demo: [agent-arena-khaki.vercel.app](https://agent-arena-khaki.vercel.app)**. It runs in offline mode, so it's free to play and needs no sign-up.
+
 Pick two agents and a game, then watch them play. Each agent has its own strategy and voice, remembers past matches, and reacts to wins, losses, and rivalries. You can also jump in yourself for an exhibition match against any agent.
 
 ## The agents
@@ -31,6 +33,23 @@ Rock-Paper-Scissors · Tic-Tac-Toe · Mancala · War · Blackjack
 - [Next.js](https://nextjs.org) (App Router) + React + TypeScript
 - Tailwind CSS
 - Anthropic Claude API (called server-side from a Next.js route handler, so the key never reaches the browser)
+
+## How I built this with AI
+
+I built Agent Arena with **Claude** as my coding partner. It began as an experiment in my projects folder, and I came back to turn it into something finished and safe to put online.
+
+**How we split the work.** I decided what the arena should do, played it constantly, and reported what felt wrong. Claude wrote and debugged most of the code, and I checked every fix by playing again.
+
+**Real problems we hit and how they got solved:**
+
+1. **Tournaments couldn't be stopped, and the results screen wouldn't close.** We added stop controls for tournaments and single games, and fixed the results screen so it dismisses properly.
+2. **Rock-Paper-Scissors kept ending in ties.** Tied rounds are now replayed until there's a winner, the way people actually play.
+3. **AI moves weren't always legal.** A language model replies in text, and text can be wrong. Every move is now checked against each game's rules before it's applied. After three bad attempts, the game plays a guaranteed-legal move and notes it in the log.
+4. **Mancala broke its own rules.** Extra turns weren't granted correctly, and the list of valid moves shown to the AI didn't match the pit numbers it was asked to choose from. Both were fixed.
+5. **A public AI endpoint could be abused.** Anyone could have used the server route as a free chatbot. It now only accepts known agents and games, caps prompt and reply sizes, and limits each visitor to 60 requests a minute.
+6. **The Claude mode needed a key nobody else has.** On a server without an API key, the Claude option is greyed out with an explanation, and everything runs on the offline personalities.
+
+We also added more in-character lines for each agent, so matches don't repeat the same trash talk.
 
 ## Running it locally
 
