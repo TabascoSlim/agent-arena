@@ -3519,7 +3519,7 @@ POST_GAME: [Your reaction]`;
                         <div className="text-2xl mb-2" style={{ color: "#ffd700", textShadow: "0 0 15px #ffd700" }}>
                           {state.tournamentStopped ? "LEADER AT STOP" : "CHAMPION"}
                         </div>
-                        <AgentModel agentId={champion.agentId} mood="win" size={230} ascii={AGENT_ASCII[champion.agentId]} color={AGENTS[champion.agentId].color} label={`${AGENTS[champion.agentId].name}, winning`} />
+                        <AgentModel agentId={champion.agentId} mood="win" size={390} ratio={1.25} zoom={1.15} draggable={false} ascii={AGENT_ASCII[champion.agentId]} color={AGENTS[champion.agentId].color} label={`${AGENTS[champion.agentId].name}, winning`} />
                         <div className="text-xl mt-2" style={{ color: AGENTS[champion.agentId].color }}>
                           {AGENTS[champion.agentId].name}
                         </div>
@@ -3606,7 +3606,9 @@ POST_GAME: [Your reaction]`;
                     <AgentModel
                       agentId={state.agent1}
                       mood={moodFor(0)}
-                      size={170}
+                      size={190}
+                      ratio={1}
+                      zoom={1}
                       ascii={AGENT_ASCII[state.agent1]}
                       color={AGENTS[state.agent1].color}
                       label={`${AGENTS[state.agent1].name}`}
@@ -4119,7 +4121,7 @@ POST_GAME: [Your reaction]`;
                                   </div>
                                 ) : (
                                   <div>
-                                    <AgentModel agentId={state.agent2!} mood="win" size={230} ascii={AGENT_ASCII[state.agent2!]} color={AGENTS[state.agent2!].color} label={`${AGENTS[state.agent2!].name}, winning`} />
+                                    <AgentModel agentId={state.agent2!} mood="win" size={390} ratio={1.25} zoom={1.15} draggable={false} ascii={AGENT_ASCII[state.agent2!]} color={AGENTS[state.agent2!].color} label={`${AGENTS[state.agent2!].name}, winning`} />
                                     <div className="text-xl mt-2" style={{ color: AGENTS[state.agent2!].color }}>
                                       {AGENTS[state.agent2!].name} WINS!
                                     </div>
@@ -4134,7 +4136,10 @@ POST_GAME: [Your reaction]`;
                                 <AgentModel
                                   agentId={state.currentGame.getWinner() === 0 ? state.agent1! : state.agent2!}
                                   mood="win"
-                                  size={260}
+                                  size={390}
+                                  ratio={1.25}
+                                  zoom={1.15}
+                                  draggable={false}
                                   ascii={AGENT_ASCII[state.currentGame.getWinner() === 0 ? state.agent1! : state.agent2!]}
                                   color={state.currentGame.getWinner() === 0 ? AGENTS[state.agent1!].color : AGENTS[state.agent2!].color}
                                   label={`${state.currentGame.getWinner() === 0 ? AGENTS[state.agent1!].name : AGENTS[state.agent2!].name}, winning`}
@@ -4196,7 +4201,9 @@ POST_GAME: [Your reaction]`;
                     <AgentModel
                       agentId={state.agent2}
                       mood={moodFor(1)}
-                      size={170}
+                      size={190}
+                      ratio={1}
+                      zoom={1}
                       ascii={AGENT_ASCII[state.agent2]}
                       color={AGENTS[state.agent2].color}
                       label={`${AGENTS[state.agent2].name}`}
