@@ -3027,6 +3027,12 @@ POST_GAME: [Your reaction]`;
   const stats = calculateStats();
 
 
+  // Picking a different game or agent after a match clears the finished board, so the new
+  // line-up starts fresh instead of inheriting the last match's win screen
+  const clearFinishedMatch = () => {
+    if (state.gamePhase === "finished") dispatch({ type: "RESET_GAME" });
+  };
+
   // Which mood an agent's 3D model shows: neutral while a match runs, winning or losing once it's over
   const moodFor = (player: 0 | 1): "neutral" | "win" | "lose" => {
     if (state.gamePhase !== "finished" || !state.currentGame) return "neutral";
@@ -3206,7 +3212,7 @@ POST_GAME: [Your reaction]`;
                     className="px-3 py-2 border bg-transparent flex-1"
                     style={{ borderColor: "#444", color: currentTheme.text, fontSize: "23px" }}
                     value={state.selectedGame || ""}
-                    onChange={(e) => dispatch({ type: "SELECT_GAME", game: e.target.value as GameType })}
+                    onChange={(e) => { clearFinishedMatch(); dispatch({ type: "SELECT_GAME", game: e.target.value as GameType }); }}
                   >
                     <option value="" style={{ backgroundColor: currentTheme.background }}>
                       [Select Game]
@@ -3251,6 +3257,7 @@ POST_GAME: [Your reaction]`;
                       value={state.agent1 || ""}
                       onChange={(e) => {
                         const value = e.target.value;
+                        clearFinishedMatch();
                         if (value === "random") {
                           const randomAgent = getRandomAgent(state.agent2);
                           dispatch({ type: "SELECT_AGENT1", agent: randomAgent });
@@ -3282,6 +3289,7 @@ POST_GAME: [Your reaction]`;
                     value={state.agent2 || ""}
                     onChange={(e) => {
                       const value = e.target.value;
+                      clearFinishedMatch();
                       if (value === "random") {
                         const randomAgent = getRandomAgent(state.agent1);
                         dispatch({ type: "SELECT_AGENT2", agent: randomAgent });
@@ -3314,6 +3322,7 @@ POST_GAME: [Your reaction]`;
                     while (agent1 === agent2) {
                       agent2 = ids[Math.floor(Math.random() * ids.length)];
                     }
+                    clearFinishedMatch();
                     dispatch({ type: "SELECT_AGENT1", agent: agent1 });
                     dispatch({ type: "SELECT_AGENT2", agent: agent2 });
                     addLog(`Randomized agents: ${AGENTS[agent1].name} vs ${AGENTS[agent2].name}`);
