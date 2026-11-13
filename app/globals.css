@@ -172,3 +172,10 @@ button:focus {
 .animate-pulse {
   animation: pulse 1.5s ease-in-out infinite;
 }
+
+/* Win screen: the centre box widens over the winner's side panel, as if the two boxes merge */
+@keyframes arena-merge-left { from { clip-path: inset(0 0 0 33.4%); } to { clip-path: inset(0 0 0 0); } }
+@keyframes arena-merge-right { from { clip-path: inset(0 33.4% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.arena-merge-left { animation: arena-merge-left 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+.arena-merge-right { animation: arena-merge-right 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+@media (prefers-reduced-motion: reduce) { .arena-merge-left, .arena-merge-right { animation: none; } }

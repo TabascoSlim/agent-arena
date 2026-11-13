@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, useReducer } from "react";
+import React, { useState, useEffect, useRef, useCallback, useReducer, useMemo } from "react";
 import {
   ArenaMemory,
   loadMemory,
@@ -10,6 +10,7 @@ import {
   getWinRate,
   clearMemory,
 } from "../lib/agentMemory";
+import AgentModel from "./AgentModel";
 
 // ============================================
 // TYPE DEFINITIONS
@@ -2997,6 +2998,23 @@ POST_GAME: [Your reaction]`;
 
   const stats = calculateStats();
 
+
+  // Which mood an agent's 3D model shows: neutral while a match runs, winning or losing once it's over
+  const moodFor = (player: 0 | 1): "neutral" | "win" | "lose" => {
+    if (state.gamePhase !== "finished" || !state.currentGame) return "neutral";
+    const winner = state.currentGame.getWinner();
+    return winner === null ? "neutral" : winner === player ? "win" : "lose";
+  };
+  // On the win screen the winner's side panel merges into the centre box, so the winner appears only once
+  const winnerSide: 0 | 1 | null =
+    state.gamePhase === "finished" && state.currentGame ? (state.currentGame.getWinner() as 0 | 1 | null) : null;
+  // Pick the winner's quote once per finished game, so it doesn't change every time the screen re-renders
+  const winQuote = useMemo(() => {
+    if (winnerSide === null || !state.currentGame || !state.agent1 || !state.agent2) return "";   // a new game gets a new quote
+    const winnerId = winnerSide === 0 ? state.agent1 : state.agent2;
+    const loserId = winnerSide === 0 ? state.agent2 : state.agent1;
+    return getRandomQuote(WIN_QUOTES[winnerId][loserId]);
+  }, [winnerSide, state.currentGame, state.agent1, state.agent2]);
   return (
     <div
       className="min-h-screen p-4 font-mono text-base"
@@ -3460,9 +3478,7 @@ POST_GAME: [Your reaction]`;
                         <div className="text-2xl mb-2" style={{ color: "#ffd700", textShadow: "0 0 15px #ffd700" }}>
                           {state.tournamentStopped ? "LEADER AT STOP" : "CHAMPION"}
                         </div>
-                        <pre style={{ color: AGENTS[champion.agentId].color, fontSize: "18px", lineHeight: "1.1" }}>
-                          {AGENT_ASCII[champion.agentId].join("\n")}
-                        </pre>
+                        <AgentModel agentId={champion.agentId} mood="win" size={230} ascii={AGENT_ASCII[champion.agentId]} color={AGENTS[champion.agentId].color} label={`${AGENTS[champion.agentId].name}, winning`} />
                         <div className="text-xl mt-2" style={{ color: AGENTS[champion.agentId].color }}>
                           {AGENTS[champion.agentId].name}
                         </div>
@@ -3527,8 +3543,8 @@ POST_GAME: [Your reaction]`;
           {/* Game Arena */}
           {state.selectedGame && state.agent1 && state.agent2 && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
-              {/* Agent 1 Panel */}
-              <div className="lg:col-span-3">
+              {/* Agent 1 Panel (hidden on the win screen when this agent won: it merges into the centre box) */}
+              <div className={winnerSide === 0 ? "hidden" : "lg:col-span-3"}>
                 <div
                   className="border p-3 h-full"
                   style={{ borderColor: AGENTS[state.agent1].color }}
@@ -3544,16 +3560,17 @@ POST_GAME: [Your reaction]`;
                       </span>
                     )}
                   </div>
-                  {/* Mini ASCII Avatar */}
+                  {/* 3D avatar: neutral during the match, then winning or losing */}
                   <div className="mb-2 flex justify-center">
-                    <pre style={{
-                      color: AGENTS[state.agent1].color,
-                      fontSize: "11px",
-                      lineHeight: "1",
-                      opacity: state.isThinking && state.thinkingAgent === AGENTS[state.agent1].name ? 1 : 0.7
-                    }}>
-                      {AGENT_ASCII[state.agent1].slice(0, 5).join("\n")}
-                    </pre>
+                    <AgentModel
+                      agentId={state.agent1}
+                      mood={moodFor(0)}
+                      size={170}
+                      ascii={AGENT_ASCII[state.agent1]}
+                      color={AGENTS[state.agent1].color}
+                      label={`${AGENTS[state.agent1].name}`}
+                      opacity={state.gamePhase !== "playing" || (state.isThinking && state.thinkingAgent === AGENTS[state.agent1].name) ? 1 : 0.85}
+                    />
                   </div>
                   <div className="min-h-[120px]" style={{ color: currentTheme.text, fontSize: "18px" }}>
                     {state.agent1Commentary && (
@@ -3590,11 +3607,15 @@ POST_GAME: [Your reaction]`;
                 </div>
               </div>
 
-              {/* Game Board */}
-              <div className="lg:col-span-6">
+              {/* Game Board (on the win screen it widens over the winner's column and takes the winner's colour) */}
+              <div className={winnerSide === null ? "lg:col-span-6" : "lg:col-span-9"}>
                 <div
-                  className="border p-4"
-                  style={{ borderColor: "#444", minHeight: "300px" }}
+                  key={winnerSide === null ? "board" : `won-${winnerSide}`}
+                  className={`border p-4 h-full ${winnerSide === null ? "" : winnerSide === 0 ? "arena-merge-left" : "arena-merge-right"}`}
+                  style={{
+                    borderColor: winnerSide === null ? "#444" : AGENTS[winnerSide === 0 ? state.agent1 : state.agent2].color,
+                    minHeight: "300px",
+                  }}
                 >
                   <div className="text-center mb-4">
                     <span style={{ color: currentTheme.primary, fontSize: "24px", textShadow: currentTheme.glow }}>
@@ -4057,9 +4078,7 @@ POST_GAME: [Your reaction]`;
                                   </div>
                                 ) : (
                                   <div>
-                                    <pre style={{ color: AGENTS[state.agent2!].color, fontSize: "16px", lineHeight: "1.1" }}>
-                                      {AGENT_ASCII[state.agent2!].join("\n")}
-                                    </pre>
+                                    <AgentModel agentId={state.agent2!} mood="win" size={230} ascii={AGENT_ASCII[state.agent2!]} color={AGENTS[state.agent2!].color} label={`${AGENTS[state.agent2!].name}, winning`} />
                                     <div className="text-xl mt-2" style={{ color: AGENTS[state.agent2!].color }}>
                                       {AGENTS[state.agent2!].name} WINS!
                                     </div>
@@ -4071,20 +4090,21 @@ POST_GAME: [Your reaction]`;
                               </>
                             ) : (
                               <>
-                                <pre style={{
-                                  color: state.currentGame.getWinner() === 0 ? AGENTS[state.agent1!].color : AGENTS[state.agent2!].color,
-                                  fontSize: "16px",
-                                  lineHeight: "1.1"
-                                }}>
-                                  {AGENT_ASCII[state.currentGame.getWinner() === 0 ? state.agent1! : state.agent2!].join("\n")}
-                                </pre>
+                                <AgentModel
+                                  agentId={state.currentGame.getWinner() === 0 ? state.agent1! : state.agent2!}
+                                  mood="win"
+                                  size={260}
+                                  ascii={AGENT_ASCII[state.currentGame.getWinner() === 0 ? state.agent1! : state.agent2!]}
+                                  color={state.currentGame.getWinner() === 0 ? AGENTS[state.agent1!].color : AGENTS[state.agent2!].color}
+                                  label={`${state.currentGame.getWinner() === 0 ? AGENTS[state.agent1!].name : AGENTS[state.agent2!].name}, winning`}
+                                />
                                 <div className="text-xl mt-2" style={{
                                   color: state.currentGame.getWinner() === 0 ? AGENTS[state.agent1!].color : AGENTS[state.agent2!].color
                                 }}>
                                   {`${state.currentGame.getWinner() === 0 ? AGENTS[state.agent1!].name : AGENTS[state.agent2!].name} WINS!`}
                                 </div>
-                                <div className="mt-4 text-sm italic max-w-md mx-auto" style={{ color: currentTheme.text }}>
-                                  &quot;{getRandomQuote(WIN_QUOTES[state.currentGame.getWinner() === 0 ? state.agent1! : state.agent2!][state.currentGame.getWinner() === 0 ? state.agent2! : state.agent1!])}&quot;
+                                <div className="mt-4 text-base italic max-w-md mx-auto" style={{ color: currentTheme.text }}>
+                                  &quot;{winQuote}&quot;
                                 </div>
                               </>
                             )}
@@ -4113,8 +4133,8 @@ POST_GAME: [Your reaction]`;
                 </div>
               </div>
 
-              {/* Agent 2 Panel */}
-              <div className="lg:col-span-3">
+              {/* Agent 2 Panel (hidden on the win screen when this agent won: it merges into the centre box) */}
+              <div className={winnerSide === 1 ? "hidden" : "lg:col-span-3"}>
                 <div
                   className="border p-3 h-full"
                   style={{ borderColor: AGENTS[state.agent2].color }}
@@ -4130,16 +4150,17 @@ POST_GAME: [Your reaction]`;
                       </span>
                     )}
                   </div>
-                  {/* Mini ASCII Avatar */}
+                  {/* 3D avatar: neutral during the match, then winning or losing */}
                   <div className="mb-2 flex justify-center">
-                    <pre style={{
-                      color: AGENTS[state.agent2].color,
-                      fontSize: "11px",
-                      lineHeight: "1",
-                      opacity: state.isThinking && state.thinkingAgent === AGENTS[state.agent2].name ? 1 : 0.7
-                    }}>
-                      {AGENT_ASCII[state.agent2].slice(0, 5).join("\n")}
-                    </pre>
+                    <AgentModel
+                      agentId={state.agent2}
+                      mood={moodFor(1)}
+                      size={170}
+                      ascii={AGENT_ASCII[state.agent2]}
+                      color={AGENTS[state.agent2].color}
+                      label={`${AGENTS[state.agent2].name}`}
+                      opacity={state.gamePhase !== "playing" || (state.isThinking && state.thinkingAgent === AGENTS[state.agent2].name) ? 1 : 0.85}
+                    />
                   </div>
                   <div className="min-h-[120px]" style={{ color: currentTheme.text, fontSize: "18px" }}>
                     {state.agent2Commentary && (
