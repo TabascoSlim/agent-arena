@@ -198,6 +198,19 @@ const GAMES: Record<GameType, { name: string; description: string }> = {
   blackjack: { name: "Blackjack", description: "Best of 3 hands, closest to 21 (pushes replay)" },
 };
 
+// Colours you can pick for yourself in YOU vs BOT
+const HUMAN_COLORS: { id: string; name: string; hex: string }[] = [
+  { id: "pink", name: "Pink", hex: "#ff69b4" },
+  { id: "violet", name: "Violet", hex: "#b388ff" },
+  { id: "orange", name: "Orange", hex: "#ff8c1a" },
+  { id: "sky", name: "Sky Blue", hex: "#4db8ff" },
+  { id: "lime", name: "Lime", hex: "#a6ff00" },
+  { id: "gold", name: "Gold", hex: "#ffd700" },
+  { id: "mint", name: "Mint", hex: "#3dffc5" },
+  { id: "white", name: "White", hex: "#f2f2f2" },
+];
+const HUMAN_COLOR_KEY = "agentArena.humanColor";
+
 // ============================================
 // ASCII ART CHARACTERS
 // ============================================
@@ -1621,8 +1634,8 @@ You are ${agent.name}. Your responses should be entirely in character - natural,
       prompt += `\nYou're a veteran with ${agentMemory.stats.totalGames} total matches (${agentMemory.stats.wins}W-${agentMemory.stats.losses}L-${agentMemory.stats.ties}T, ${getWinRate(agentMemory.stats)}% win rate).`;
     }
 
-    // Rivalry with this specific opponent
-    if (rivalry.totalGames > 0) {
+    // Rivalry with this specific opponent (none exists when the opponent is the agent itself, as in YOU vs BOT)
+    if (rivalry && rivalry.totalGames > 0) {
       prompt += `\n\nYOUR HISTORY WITH ${opponent.name.toUpperCase()}:`;
       prompt += `\n- Record: ${rivalry.wins}W-${rivalry.losses}L-${rivalry.ties}T`;
 
@@ -1633,7 +1646,7 @@ You are ${agent.name}. Your responses should be entirely in character - natural,
       } else if (rivalry.totalGames >= 5 && Math.abs(rivalry.wins - rivalry.losses) <= 1) {
         prompt += `\n- You two are evenly matched rivals. Every game is intense!`;
       }
-    } else {
+    } else if (opponent.id !== agent.id) {
       prompt += `\n\nThis is your FIRST match against ${opponent.name}. You don't know their style yet.`;
     }
 
@@ -1646,7 +1659,7 @@ You are ${agent.name}. Your responses should be entirely in character - natural,
     }
 
     // Game-specific experience
-    if (gameStats.totalGames >= 5) {
+    if (gameStats && gameStats.totalGames >= 5) {
       const winRate = getWinRate(gameStats);
       if (winRate >= 70) {
         prompt += `\n\n${gameType.toUpperCase()} is your BEST game (${winRate}% win rate). You're confident here.`;
@@ -2233,6 +2246,20 @@ export default function AgentGameArena() {
   const [arenaMemory, setArenaMemory] = useState<ArenaMemory | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
 
+  // Your colour in YOU vs BOT, remembered in this browser
+  const [humanColorId, setHumanColorId] = useState("pink");
+  const humanColor = (HUMAN_COLORS.find((c) => c.id === humanColorId) ?? HUMAN_COLORS[0]).hex;
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(HUMAN_COLOR_KEY);
+      if (saved && HUMAN_COLORS.some((c) => c.id === saved)) setHumanColorId(saved);
+    } catch { /* storage blocked: keep the default */ }
+  }, []);
+  const chooseHumanColor = (id: string) => {
+    setHumanColorId(id);
+    try { localStorage.setItem(HUMAN_COLOR_KEY, id); } catch { /* storage blocked: it just won't be remembered */ }
+  };
+
   // Load memory from localStorage on mount
   useEffect(() => {
     const memory = loadMemory();
@@ -2509,8 +2536,9 @@ export default function AgentGameArena() {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
         gameType: state.selectedGame!,
-        agent1: { id: state.agent1!, name: AGENTS[state.agent1!].name },
-        agent2: { id: state.agent2!, name: AGENTS[state.agent2!].name },
+        // In YOU vs BOT the first player is you, so there may be no agent to name (this record isn't saved then anyway)
+        agent1: { id: state.agent1 ?? "analyst", name: state.agent1 ? AGENTS[state.agent1].name : "You" },
+        agent2: { id: state.agent2 ?? "analyst", name: state.agent2 ? AGENTS[state.agent2].name : "Bot" },
         winner: winner as 0 | 1 | null,
         rounds: roundCount,
         duration: 0,
@@ -3156,16 +3184,16 @@ POST_GAME: [Your reaction]`;
                 <button
                   className={`px-4 py-2 border transition-all ${state.gameMode === "human-vs-bot" ? "border-2" : ""}`}
                   style={{
-                    borderColor: state.gameMode === "human-vs-bot" ? "#ff69b4" : "#444",
-                    color: state.gameMode === "human-vs-bot" ? "#ff69b4" : currentTheme.text,
-                    backgroundColor: state.gameMode === "human-vs-bot" ? "#ff69b420" : "transparent",
+                    borderColor: state.gameMode === "human-vs-bot" ? humanColor : "#444",
+                    color: state.gameMode === "human-vs-bot" ? humanColor : currentTheme.text,
+                    backgroundColor: state.gameMode === "human-vs-bot" ? `${humanColor}20` : "transparent",
                   }}
                   onClick={() => dispatch({ type: "SET_GAME_MODE", mode: "human-vs-bot" })}
                 >
                   [ YOU vs BOT ]
                 </button>
                 {state.gameMode === "human-vs-bot" && (
-                  <span style={{ color: "#ff69b4", fontSize: "18px" }}>
+                  <span style={{ color: humanColor, fontSize: "18px" }}>
                     (Exhibition - Stats not recorded)
                   </span>
                 )}
@@ -3197,12 +3225,25 @@ POST_GAME: [Your reaction]`;
                     {state.gameMode === "human-vs-bot" ? `> Player 1:` : `> Agent 1:`}
                   </span>
                   {state.gameMode === "human-vs-bot" ? (
-                    <div
-                      className="px-3 py-2 border flex-1"
-                      style={{ borderColor: "#ff69b4", color: "#ff69b4", fontSize: "23px" }}
+                    <label
+                      className="px-3 py-2 border flex-1 flex items-center gap-2"
+                      style={{ borderColor: humanColor, color: humanColor, fontSize: "23px" }}
                     >
-                      YOU (Human)
-                    </div>
+                      <span className="whitespace-nowrap">YOU</span>
+                      <select
+                        aria-label="Your colour"
+                        className="bg-transparent flex-1 min-w-0"
+                        style={{ color: humanColor, fontSize: "20px" }}
+                        value={humanColorId}
+                        onChange={(e) => chooseHumanColor(e.target.value)}
+                      >
+                        {HUMAN_COLORS.map((c) => (
+                          <option key={c.id} value={c.id} style={{ color: c.hex, backgroundColor: "#111" }}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   ) : (
                     <select
                       className="px-3 py-2 border bg-transparent flex-1"
@@ -3547,12 +3588,12 @@ POST_GAME: [Your reaction]`;
               <div className={winnerSide === 0 ? "hidden" : "lg:col-span-3"}>
                 <div
                   className="border p-3 h-full"
-                  style={{ borderColor: AGENTS[state.agent1].color }}
+                  style={{ borderColor: state.gameMode === "human-vs-bot" ? humanColor : AGENTS[state.agent1].color }}
                 >
                   <div className="flex items-center gap-2 mb-2 pb-2 border-b" style={{ borderColor: "#444" }}>
-                    <span style={{ color: AGENTS[state.agent1].color }}>●</span>
-                    <span className="font-bold" style={{ color: AGENTS[state.agent1].color }}>
-                      {AGENTS[state.agent1].name.toUpperCase()}
+                    <span style={{ color: state.gameMode === "human-vs-bot" ? humanColor : AGENTS[state.agent1].color }}>●</span>
+                    <span className="font-bold" style={{ color: state.gameMode === "human-vs-bot" ? humanColor : AGENTS[state.agent1].color }}>
+                      {state.gameMode === "human-vs-bot" ? "YOU" : AGENTS[state.agent1].name.toUpperCase()}
                     </span>
                     {state.isThinking && state.thinkingAgent === AGENTS[state.agent1].name && (
                       <span className="animate-pulse" style={{ color: currentTheme.text }}>
@@ -3560,8 +3601,8 @@ POST_GAME: [Your reaction]`;
                       </span>
                     )}
                   </div>
-                  {/* 3D avatar: neutral during the match, then winning or losing */}
-                  <div className="mb-2 flex justify-center">
+                  {/* 3D avatar: neutral during the match, then winning or losing (none for you in YOU vs BOT) */}
+                  {winnerSide !== 0 && state.gameMode !== "human-vs-bot" && <div className="mb-2 flex justify-center">
                     <AgentModel
                       agentId={state.agent1}
                       mood={moodFor(0)}
@@ -3571,7 +3612,7 @@ POST_GAME: [Your reaction]`;
                       label={`${AGENTS[state.agent1].name}`}
                       opacity={state.gamePhase !== "playing" || (state.isThinking && state.thinkingAgent === AGENTS[state.agent1].name) ? 1 : 0.85}
                     />
-                  </div>
+                  </div>}
                   <div className="min-h-[120px]" style={{ color: currentTheme.text, fontSize: "18px" }}>
                     {state.agent1Commentary && (
                       <TypewriterText
@@ -3613,7 +3654,7 @@ POST_GAME: [Your reaction]`;
                   key={winnerSide === null ? "board" : `won-${winnerSide}`}
                   className={`border p-4 h-full ${winnerSide === null ? "" : winnerSide === 0 ? "arena-merge-left" : "arena-merge-right"}`}
                   style={{
-                    borderColor: winnerSide === null ? "#444" : AGENTS[winnerSide === 0 ? state.agent1 : state.agent2].color,
+                    borderColor: winnerSide === null ? "#444" : winnerSide === 0 && state.gameMode === "human-vs-bot" ? humanColor : AGENTS[winnerSide === 0 ? state.agent1 : state.agent2].color,
                     minHeight: "300px",
                   }}
                 >
@@ -3915,9 +3956,9 @@ POST_GAME: [Your reaction]`;
                         {state.gameMode === "human-vs-bot" && state.waitingForHuman && (
                           <div
                             className="mt-6 p-4 border-2 rounded"
-                            style={{ borderColor: "#ff69b4", backgroundColor: "#ff69b410" }}
+                            style={{ borderColor: humanColor, backgroundColor: `${humanColor}10` }}
                           >
-                            <div className="text-center mb-3" style={{ color: "#ff69b4", fontSize: "18px" }}>
+                            <div className="text-center mb-3" style={{ color: humanColor, fontSize: "18px" }}>
                               YOUR TURN - Make your move!
                             </div>
 
@@ -3929,8 +3970,8 @@ POST_GAME: [Your reaction]`;
                                     key={move}
                                     className="px-6 py-3 border-2 hover:scale-105 transition-transform"
                                     style={{
-                                      borderColor: "#ff69b4",
-                                      color: "#ff69b4",
+                                      borderColor: humanColor,
+                                      color: humanColor,
                                       fontSize: "18px",
                                     }}
                                     onClick={() => handleHumanMove(move)}
@@ -3956,8 +3997,8 @@ POST_GAME: [Your reaction]`;
                                         key={pos}
                                         className="w-12 h-12 border-2 text-xl font-bold transition-all"
                                         style={{
-                                          borderColor: isAvailable ? "#ff69b4" : "#444",
-                                          color: isAvailable ? "#ff69b4" : "#666",
+                                          borderColor: isAvailable ? humanColor : "#444",
+                                          color: isAvailable ? humanColor : "#666",
                                           opacity: isAvailable ? 1 : 0.5,
                                         }}
                                         onClick={() => isAvailable && handleHumanMove(String(pos))}
@@ -3989,8 +4030,8 @@ POST_GAME: [Your reaction]`;
                                         key={pit}
                                         className="w-14 h-14 border-2 flex flex-col items-center justify-center transition-all"
                                         style={{
-                                          borderColor: isAvailable ? "#ff69b4" : "#444",
-                                          color: isAvailable ? "#ff69b4" : "#666",
+                                          borderColor: isAvailable ? humanColor : "#444",
+                                          color: isAvailable ? humanColor : "#666",
                                           opacity: isAvailable ? 1 : 0.5,
                                         }}
                                         onClick={() => isAvailable && handleHumanMove(String(pit))}
@@ -4011,8 +4052,8 @@ POST_GAME: [Your reaction]`;
                                 <button
                                   className="px-8 py-4 border-2 hover:scale-105 transition-transform"
                                   style={{
-                                    borderColor: "#ff69b4",
-                                    color: "#ff69b4",
+                                    borderColor: humanColor,
+                                    color: humanColor,
                                     fontSize: "20px",
                                   }}
                                   onClick={() => handleHumanMove("Draw")}
@@ -4151,7 +4192,7 @@ POST_GAME: [Your reaction]`;
                     )}
                   </div>
                   {/* 3D avatar: neutral during the match, then winning or losing */}
-                  <div className="mb-2 flex justify-center">
+                  {winnerSide !== 1 && <div className="mb-2 flex justify-center">
                     <AgentModel
                       agentId={state.agent2}
                       mood={moodFor(1)}
@@ -4161,7 +4202,7 @@ POST_GAME: [Your reaction]`;
                       label={`${AGENTS[state.agent2].name}`}
                       opacity={state.gamePhase !== "playing" || (state.isThinking && state.thinkingAgent === AGENTS[state.agent2].name) ? 1 : 0.85}
                     />
-                  </div>
+                  </div>}
                   <div className="min-h-[120px]" style={{ color: currentTheme.text, fontSize: "18px" }}>
                     {state.agent2Commentary && (
                       <TypewriterText

@@ -20,3 +20,6 @@ export function mountAgentModel(
 ): (() => void) | null;
 
 export const AGENT_MODEL_IDS: string[];
+
+/** How many models are currently showing (for tests). */
+export function activeAgentModelCount(): number;

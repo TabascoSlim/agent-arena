@@ -11,7 +11,7 @@
 // CSS pixels per rendered pixel: the chunky, PS2-icon look (small models get finer pixels so they stay readable)
 const pixelFor = (cssWidth) => (cssWidth < 150 ? 1.2 : 1.45);
 
-const { mountAgentModel, AGENT_MODEL_IDS } = (() => {
+const { mountAgentModel, AGENT_MODEL_IDS, activeAgentModelCount } = (() => {
   // ================= Tiny matrix helpers (column-major) =================
   const M = {
     id: () => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
@@ -886,7 +886,9 @@ const { mountAgentModel, AGENT_MODEL_IDS } = (() => {
       canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up);
     };
   }
-  return { mountAgentModel, AGENT_MODEL_IDS: Object.keys(AGENT_BY_ID) };
+  // How many models are currently showing (used by the tests to check nothing is left running)
+  const activeAgentModelCount = () => views.size;
+  return { mountAgentModel, AGENT_MODEL_IDS: Object.keys(AGENT_BY_ID), activeAgentModelCount };
 })();
 
-export { mountAgentModel, AGENT_MODEL_IDS };
+export { mountAgentModel, AGENT_MODEL_IDS, activeAgentModelCount };
