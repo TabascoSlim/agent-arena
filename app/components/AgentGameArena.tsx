@@ -378,7 +378,7 @@ export default function AgentGameArena() {
         const winnerName = state.gameMode === "human-vs-bot" && winner === 0
           ? "You"
           : AGENTS[winner === 0 ? state.agent1! : state.agent2!].name;
-        addLog(`Game Over! ${winnerName} wins!`);
+        addLog(winnerName === "You" ? "Game Over! You win!" : `Game Over! ${winnerName} wins!`);
         playSound("win");
         // Play crowd cheer after a short delay
         setTimeout(() => playSound("cheer"), 300);
