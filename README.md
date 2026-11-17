@@ -34,22 +34,34 @@ Rock-Paper-Scissors · Tic-Tac-Toe · Mancala · War · Blackjack
 - Tailwind CSS
 - Anthropic Claude API (called server-side from a Next.js route handler, so the key never reaches the browser)
 
+## Where it started
+
+Agent Arena began in April 2024 as **Ant Colony**, a pair of Python scripts I wrote myself. Two AI "worker ants" with opposite personalities debated each other on any topic a person typed in:
+
+- **ANTuan** loved a fight and tried to get a rise out of his opponent.
+- **ANThony** was gentle and didn't enjoy debating, but put in the effort.
+
+The first script (`antdebate.py`) used the OpenAI API and stopped at stubs where the turn-taking should go. A few days later I rebuilt it with CrewAI (`antcrewai.py`). That version gave each ant a backstory, web-search tools and shared memory, and capped the debate at 15 messages, with no winner if neither side gave in. It was rough and never fully worked, but the core idea was already there: AI personalities going head-to-head, each with its own voice.
+
+Back then the tools couldn't carry the idea much further. Once AI coding got good enough, I came back to it, and the two ants became five agents playing real games with memory, rivalries and a human who can jump in.
+
 ## How I built this with AI
 
 I built Agent Arena with **Claude** as my coding partner. It began as an experiment in my projects folder, and I came back to turn it into something finished and safe to put online.
 
-**How we split the work.** I decided what the arena should do, played it constantly, and reported what felt wrong. Claude wrote and debugged most of the code, and I checked every fix by playing again.
+**How I split the work.** I decided what the arena should do, played it constantly, and reported what felt wrong. Claude wrote and debugged most of the code, and I checked every fix by playing again.
 
-**Real problems we hit and how they got solved:**
+**Real problems I hit and how they got solved:**
 
-1. **Tournaments couldn't be stopped, and the results screen wouldn't close.** We added stop controls for tournaments and single games, and fixed the results screen so it dismisses properly.
+1. **Tournaments couldn't be stopped, and the results screen wouldn't close.** I found both while playing. Claude added stop controls for tournaments and single games and fixed the results screen so it dismisses properly.
 2. **Rock-Paper-Scissors kept ending in ties.** Tied rounds are now replayed until there's a winner, the way people actually play.
 3. **AI moves weren't always legal.** A language model replies in text, and text can be wrong. Every move is now checked against each game's rules before it's applied. After three bad attempts, the game plays a guaranteed-legal move and notes it in the log.
 4. **Mancala broke its own rules.** Extra turns weren't granted correctly, and the list of valid moves shown to the AI didn't match the pit numbers it was asked to choose from. Both were fixed.
 5. **A public AI endpoint could be abused.** Anyone could have used the server route as a free chatbot. It now only accepts known agents and games, caps prompt and reply sizes, and limits each visitor to 60 requests a minute.
 6. **The Claude mode needed a key nobody else has.** On a server without an API key, the Claude option is greyed out with an explanation, and everything runs on the offline personalities.
+7. **Everything lived in one 4,500-line file.** Game rules, quotes, prompts, state and the whole UI shared one component, so an error message pointed at a line number that could have been anything. I decided to split it by job (each game, the data, the prompts, the state, the API call), and Claude moved the code into the `app/arena/` folder. Now an error in Mancala points at `games/mancala.ts`, and each game can be tested on its own. Before I kept the split, it was checked line by line so no code was lost, I ran the production build, and every game was played again to confirm nothing broke.
 
-We also added more in-character lines for each agent, so matches don't repeat the same trash talk.
+I also had Claude write more in-character lines for each agent, so matches don't repeat the same trash talk.
 
 ## Running it locally
 
@@ -72,10 +84,24 @@ Then open http://localhost:3000. Use the selector in the top-right corner to swi
 
 ```
 app/
-  page.tsx                     Entry point
-  components/AgentGameArena.tsx  Game UI, game logic, and agent prompts
-  lib/agentMemory.ts           Persistent stats, rivalries, and match history
-  api/game/route.ts            Server route: Claude calls, offline logic, request guards
+  page.tsx                       Entry point
+  components/
+    AgentGameArena.tsx           Main screen: setup, board, side panels, results
+    AgentModel.tsx               Low-poly 3D agent models (WebGL2)
+  arena/
+    types.ts                     Shared types for games, agents and state
+    state.ts                     Game state and reducer
+    prompts.ts                   Agent personalities and memory-aware prompts
+    api.ts                       Calls the /api/game route
+    tournament.ts                Round-robin tournament schedule
+    useTerminalSounds.ts         Sound effects
+    TypewriterText.tsx           Typing animation for agent commentary
+    data/                        Agents, themes, quotes and ASCII art
+    games/                       One file per game, plus card helpers and
+                                 shared move rules (legal-move check, fallback
+                                 move, Mancala extra turns)
+  lib/agentMemory.ts             Persistent stats, rivalries and match history
+  api/game/route.ts              Server route: Claude calls, offline logic, request guards
 ```
 
 ## Scripts
